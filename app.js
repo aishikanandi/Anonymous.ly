@@ -2,7 +2,10 @@ const express = require('express');
 const bodyParser= require('body-parser'); //data from client
 const mongoose = require("mongoose");
 const ejs = require("ejs");
-const encrypt = require("mongoose-encryption")
+//const md5 = require("md5");
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
+//const encrypt = require("mongoose-encryption")
 const app=express();
 var code=0;
 require('dotenv').config();
@@ -19,8 +22,8 @@ const userSchema =new mongoose.Schema({
     email: String,
     password:String 
 })
-var secret = process.env.SOME_LONG_UNGUESSABLE_STRING;
-userSchema.plugin(encrypt,{secret:secret, encryptedFields: ['password']});
+//var secret = process.env.SOME_LONG_UNGUESSABLE_STRING;
+//userSchema.plugin(encrypt,{secret:secret, encryptedFields: ['password']});
 
 const Cred = mongoose.model("Cred", userSchema)
 
@@ -36,29 +39,34 @@ app.get('/register',function(req,res){
 
 });
 app.post('/register',function(req,res){
-    Cred.findOne({email: req.body.username}, function(err, foundOne){
-        if(!err){
-            if(foundOne){
-                code=1;
-                //Redirect to login page and inform the creds are already in use.
-                res.render("register",{flag:code})
-                code=0;
+
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+       
+        Cred.findOne({email: req.body.username}, function(err, foundOne){
+            if(!err){
+                if(foundOne){
+                    code=1;
+                    //Redirect to login page and inform the creds are already in use.
+                    res.render("register",{flag:code})
+                    code=0;
+                }else{
+                    const newcred= new Cred({
+                        email: req.body.username,
+                        password:hash
+                    }) 
+                    newcred.save(function(err){
+                        if(err){
+                            console.log("Error in saving new creds: ",err)
+                        }
+                    })
+                    res.render("secrets")
+                }
             }else{
-                const newcred= new Cred({
-                    email: req.body.username,
-                    password:req.body.password
-                }) 
-                newcred.save(function(err){
-                    if(err){
-                        console.log("Error in saving new creds: ",err)
-                    }
-                })
-                res.render("secrets")
+                console.log("Error in finding one user with same creds: ",err)
             }
-        }else{
-            console.log("Error in finding one user with same creds: ",err)
-        }
-    })
+        })
+        
+    });
     
 })
 
@@ -68,13 +76,16 @@ app.post('/login', function(req, res){
     Cred.findOne({email: user}, function(err, foundone){
         if(!err){
             if(foundone){
-                if(foundone.password==password){
-                    res.render("secrets")
-                }else{
-                    code=2
-                    res.render("login",{flag:code})
-                    code=0;
-                }
+                bcrypt.compare(password, foundone.password, function(err, res2) {
+                    if(res2===true){
+                        res.render("secrets")
+                    }else{
+                        code=2
+                        res.render("login",{flag:code})
+                        code=0;
+                    }
+                });
+                
             }else{
                 code=3
                 res.render("login",{flag:code})
